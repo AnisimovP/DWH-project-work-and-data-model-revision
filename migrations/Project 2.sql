@@ -106,33 +106,36 @@ create table shipping_status (
 
 insert into shipping_status (shippingid, status, state, shipping_start_fact_datetime, shipping_end_fact_datetime)
 
-with table1 as 
-(select distinct shippingid ,
-	status,
-	state,
-	case 
-		when min(state_datetime) over (partition by shippingid) = state_datetime then state_datetime
-	end as shipping_start_fact_datetime,
-	case 
-		when max(state_datetime) over (partition by shippingid) = state_datetime then state_datetime
-	end as shipping_end_fact_datetime
-from shipping)
-select 	sfd.shippingid,
-		efd.status,
-		efd.state,
-		sfd.shipping_start_fact_datetime,
-		efd.shipping_end_fact_datetime
-from (
-		select *
-		from table1
-		where shipping_start_fact_datetime is not null
-) sfd
-left join (
-		select *
-		from table1
-		where shipping_end_fact_datetime is not null
-) efd
-on sfd.shippingid = efd.shippingid
+with table1 as (
+select 
+		shippingid, 
+		status, 
+		state, 
+		state_datetime,
+		row_number () over(partition by shippingid order by state_datetime desc) as rn
+from shipping),
+table2 as (
+select
+		shippingid,
+		state_datetime as shipping_start_fact_datetime
+from shipping 
+where state = 'booked'),
+table3 as (
+select
+		shippingid,
+		state_datetime as shipping_end_fact_datetime
+from shipping 
+where state = 'recieved')
+select 	table1.shippingid, 
+		table1.status, 
+		table1.state,
+		table2.shipping_start_fact_datetime,
+		table3.shipping_end_fact_datetime
+from table1
+left join table2 on table1.shippingid = table2.shippingid
+left join table3 on table1.shippingid = table3.shippingid
+where table1.rn = 1
+order by table1.shippingid
 ;
 
 
@@ -161,4 +164,5 @@ from shipping_info si
 left join shipping_transfer st on si.transferid = st.transferid
 left join shipping_status ss on si.shippingid = ss.shippingid 
 left join shipping_country_rates scr on si.countryratessid = scr.countryratessid
-left join shipping_agreement sa on si.agreementid = sa.agreementid;
+left join shipping_agreement sa on si.agreementid = sa.agreementid
+order by si.shippingid;
